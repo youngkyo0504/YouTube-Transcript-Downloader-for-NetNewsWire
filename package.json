@@ -11,5 +11,9 @@
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "yocto-spinner": "^1.0.0",
+    "yoctocolors": "^2.1.2"
   }
 }

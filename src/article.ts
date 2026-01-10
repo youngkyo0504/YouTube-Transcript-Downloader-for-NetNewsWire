@@ -15,11 +15,12 @@ export function getTodayArticles(): {
 }[] {
   const db = new Database(DB_PATH, { readonly: true });
   const query = db.query(`
-    SELECT title, url, datePublished
-    FROM articles
-    WHERE datePublished >= strftime('%s', date('now', '+9 hours'), '-9 hours')
-      AND datePublished <= strftime('%s', date('now', '+9 hours'), '+15 hours', '-1 second')
-    ORDER BY datePublished DESC
+    SELECT a.title, a.url, a.datePublished
+    FROM articles a
+    JOIN statuses s ON a.articleID = s.articleID
+    WHERE s.read = 0
+      AND a.datePublished >= strftime('%s', date('now', '+9 hours', '-1 day'), '-9 hours')
+    ORDER BY a.datePublished DESC
   `);
   const todayArticles = query.all() as {
     title: string;
