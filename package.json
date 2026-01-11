@@ -7,7 +7,8 @@
     "@types/bun": "latest"
   },
   "scripts": {
-    "start": "bun run src/index.ts"
+    "start": "bun run src/index.ts",
+    "summarize-playlist": "bun run src/playlist/summarize-playlist.ts"
   },
   "peerDependencies": {
     "typescript": "^5"
