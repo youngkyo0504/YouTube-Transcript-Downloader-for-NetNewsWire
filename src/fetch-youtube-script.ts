@@ -1,7 +1,11 @@
 import { unlink } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { type TranscriptResult } from "./type";
+import {
+  type TranscriptResult,
+  type PlaylistVideoInfo,
+  type PlaylistTranscriptResult,
+} from "./type";
 
 // 1. 영상 ID 추출 (로직 동일)
 export function extractVideoId(url: string): string | null {
@@ -189,4 +193,127 @@ export async function getVideoTranscript(
     transcript,
     title: videoTitle || `YouTube Video ${videoId}`,
   };
+}
+
+// ============ 재생목록 관련 함수들 ============
+
+// 재생목록 URL에서 playlist ID 추출
+export function extractPlaylistId(url: string): string | null {
+  const patterns = [
+    /[?&]list=([a-zA-Z0-9_-]+)/,
+    /(?:https?:\/\/)?(?:www\.)?youtube\.com\/playlist\?list=([a-zA-Z0-9_-]+)/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match && match[1]) return match[1];
+  }
+  return null;
+}
+
+// 재생목록의 모든 비디오 정보 가져오기
+export async function getPlaylistVideos(
+  playlistUrl: string
+): Promise<PlaylistVideoInfo[]> {
+  const ytDlpPath = await resolveYtDlpPath();
+
+  // --flat-playlist: 비디오 다운로드 없이 메타데이터만 가져옴
+  // -J: JSON 형식으로 출력
+  const { stdout } = await execCommand([
+    ytDlpPath,
+    "--flat-playlist",
+    "-J",
+    playlistUrl,
+  ]);
+
+  const playlistData = JSON.parse(stdout);
+  const videos: PlaylistVideoInfo[] = [];
+
+  if (playlistData.entries && Array.isArray(playlistData.entries)) {
+    for (let i = 0; i < playlistData.entries.length; i++) {
+      const entry = playlistData.entries[i];
+      videos.push({
+        videoId: entry.id,
+        title: entry.title || `Video ${i + 1}`,
+        index: i + 1,
+      });
+    }
+  }
+
+  return videos;
+}
+
+// 재생목록의 모든 비디오 transcript 가져오기
+export async function getPlaylistTranscripts(
+  playlistUrl: string,
+  language: string = "en",
+  options?: {
+    concurrency?: number; // 동시 처리 개수 (기본: 3)
+    onProgress?: (current: number, total: number, title: string) => void;
+  }
+): Promise<PlaylistTranscriptResult[]> {
+  const { concurrency = 3, onProgress } = options || {};
+
+  // 1. 재생목록의 모든 비디오 정보 가져오기
+  console.log("📋 재생목록 정보를 가져오는 중...");
+  const videos = await getPlaylistVideos(playlistUrl);
+  console.log(`📹 총 ${videos.length}개의 비디오를 찾았습니다.`);
+
+  const results: PlaylistTranscriptResult[] = [];
+
+  // 2. 배치 단위로 처리 (동시성 제한)
+  for (const video of videos) {
+    onProgress?.(video.index, videos.length, video.title);
+    console.log(
+      `🎬 [${video.index}/${videos.length}] "${video.title}" 처리 중...`
+    );
+
+    try {
+      const videoUrl = `https://www.youtube.com/watch?v=${video.videoId}`;
+      const { transcript, videoTitle } = await getYouTubeTranscriptAsPlainText(
+        videoUrl,
+        language
+      );
+
+      results.push({
+        videoId: video.videoId,
+        title: videoTitle || video.title,
+        transcript,
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error(`❌ "${video.title}" 처리 실패: ${errorMessage}`);
+
+      results.push({
+        videoId: video.videoId,
+        title: video.title,
+        transcript: null,
+        error: errorMessage,
+      });
+    }
+  }
+
+  // 3. 결과 요약
+  const successCount = results.filter((r) => r.transcript !== null).length;
+  console.log(
+    `\n✅ 완료: ${successCount}/${videos.length}개 비디오의 자막을 가져왔습니다.`
+  );
+
+  return results;
+}
+
+// 간단한 사용을 위한 헬퍼 함수
+export async function getPlaylistTranscriptsCombined(
+  playlistUrl: string,
+  language: string = "en"
+): Promise<{ title: string; transcript: string }[]> {
+  const results = await getPlaylistTranscripts(playlistUrl, language);
+
+  return results
+    .filter((r) => r.transcript !== null)
+    .map((r) => ({
+      title: r.title,
+      transcript: r.transcript!,
+    }));
 }

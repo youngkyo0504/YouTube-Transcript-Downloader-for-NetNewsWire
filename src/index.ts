@@ -59,8 +59,5 @@ try {
   }
 } catch (error) {
   const errorMessage = error instanceof Error ? error.message : String(error);
-  const title = errorMessage.includes("yt-dlp")
-    ? "yt-dlp not found"
-    : "Failed to fetch transcript";
-  console.error(title);
+  console.error(errorMessage);
 }
